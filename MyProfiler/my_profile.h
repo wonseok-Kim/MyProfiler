@@ -1,9 +1,12 @@
 #pragma once
 
+typedef void(*profile_error_handler)(const wchar_t* errMsg);
+
 void ProfileBegin(const wchar_t* tag);
 void ProfileEnd(const wchar_t* tag);
 void ProfileDataOutText(const wchar_t* fileName);
 void ProfileReset(void);
+void ProfileSetErrorHandler(profile_error_handler handler);
 
 #define PROFILE
 

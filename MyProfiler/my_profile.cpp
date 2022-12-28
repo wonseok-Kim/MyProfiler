@@ -5,6 +5,10 @@
 
 #include "my_profile.h"
 
+static void MakeError(const wchar_t* format, ...);
+static void ProfileError(const wchar_t* errMsg);
+static profile_error_handler s_ErrorHandler = ProfileError;
+
 static constexpr size_t TAG_LENGTH = 64;
 
 struct ProfileData
@@ -12,7 +16,7 @@ struct ProfileData
     bool bFlag;
     wchar_t tag[TAG_LENGTH + 1];
 
-    LARGE_INTEGER startTime;
+    LARGE_INTEGER startTime; // End호출 후 0
 
     INT64 totalTime;
     INT64 min[2];  // [0]: 가장 최소, [1]: 다음 최소
@@ -44,7 +48,7 @@ public:
         {
             if (m_DataCount > MAX_DATA - 1)
             {
-                // TODO: 에러 처리
+                MakeError(L"TagName: '%s' profile data is full", tagName);
                 return;
             }
             p = &m_DataList[m_DataCount++];
@@ -54,6 +58,11 @@ public:
         else
         {
             p = &m_DataList[idx];
+            if (p->startTime.QuadPart != 0)
+            {
+                MakeError(L"TagName: '%s' ProfileBegin() was called twice without ProfileEnd().", tagName);
+                return;
+            }
         }
 
         QueryPerformanceCounter(&p->startTime);
@@ -67,16 +76,22 @@ public:
         int idx = FindIdx(tagName);
         if (idx < 0)
         {
-            // TODO: 에러처리 
+            MakeError(L"tagName '%s' doesn't exist in ProfileEnd().", tagName);
             return;
         }
         ProfileData* p = &m_DataList[idx];
+        if (p->startTime.QuadPart == 0)
+        {
+            MakeError(L"TagName: '%s' ProfileEnd() was called without ProfileBegin().", tagName);
+            return;
+        }
 
-        INT64 elapsedMicroseconds = (end.QuadPart - p->startTime.QuadPart) * 100'000'0;
+        INT64 elapsedMicroseconds = (end.QuadPart - p->startTime.QuadPart) * 1'000'000;
         elapsedMicroseconds /= m_Freq.QuadPart;
 
         p->totalTime += elapsedMicroseconds;
         p->callCount++;
+        p->startTime.QuadPart = 0;
 
         if (p->min[1] > elapsedMicroseconds)
         {
@@ -96,13 +111,11 @@ public:
 
     void SaveDataToFile(const wchar_t* filename)
     {
-        assert(filename);
-
         FILE* pFile;
         errno_t result = _wfopen_s(&pFile, filename, L"w");
         if (result != 0 || pFile == nullptr)
         {
-            // TODO: 에러 처리
+            MakeError(L"'%s' open err: %d", filename, result);
             return;
         }
 
@@ -118,6 +131,11 @@ public:
             {
                 INT64 total = p->totalTime - (p->min[0] + p->min[1] + p->max[0] + p->max[1]);
                 average = (double)total / (p->callCount - 4);
+            }
+            else if (p->callCount == 0)
+            {
+                fwprintf(pFile, L"%19s\t| Only ProfileBegin() was called and ProfileEnd() was not called.\n", p->tag);
+                continue;
             }
             else
             {
@@ -175,20 +193,46 @@ static ProfileManager s_Profiler;
 
 void ProfileBegin(const wchar_t* tag)
 {
+    assert(tag);
     s_Profiler.Begin(tag);
 }
 
 void ProfileEnd(const wchar_t* tag)
 {
+    assert(tag);
     s_Profiler.End(tag);
 }
 
 void ProfileDataOutText(const wchar_t* fileName)
 {
+    assert(fileName);
     s_Profiler.SaveDataToFile(fileName);
 }
 
 void ProfileReset(void)
 {
     s_Profiler.Reset();
+}
+
+void ProfileSetErrorHandler(profile_error_handler handler)
+{
+    s_ErrorHandler = handler;
+}
+
+static void MakeError(const wchar_t* format, ...)
+{
+    wchar_t buffer[256];
+
+    va_list args;
+    va_start(args, format);
+    vswprintf_s(buffer, _countof(buffer), format, args);
+    va_end(args);
+
+    s_ErrorHandler(buffer);
+}
+
+static void ProfileError(const wchar_t* errMsg)
+{
+    wprintf(errMsg);
+    abort();
 }
