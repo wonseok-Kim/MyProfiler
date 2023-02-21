@@ -1,6 +1,8 @@
 #include <locale.h>
 #include <stdio.h>
 #include <vector>
+#include <io.h>
+#include <fcntl.h>
 
 #include <Windows.h>
 #include <timeapi.h>
@@ -48,26 +50,61 @@ void TestFunc3()
 	PRO_BEGIN(L"dsfsdklj");
 }
 
+void Test1()
+{
+	constexpr int length = 10;
+	WCHAR* szTest1 = new WCHAR[length];
+	wmemset(szTest1, L' ', length);
+	szTest1[length - 1] = L'\0';
+
+	CHAR* szText2 = new CHAR[length];
+	memset(szText2, ' ', length);
+	szText2[length - 1] = '\0';
+
+	for (int i = 0; i < 100; ++i)
+	{
+		PRO_BEGIN(L"C wprintf");
+		wprintf(szTest1);
+		PRO_END(L"C wprintf");
+	}
+
+	//for (int i = 0; i < 100; ++i)
+	//{
+	//	PRO_BEGIN(L"C printf");
+	//	printf(szText2);
+	//	PRO_END(L"C printf");
+	//}
+
+	const WCHAR* beforeLocale = _wsetlocale(LC_ALL, nullptr);
+	const WCHAR* locale = _wsetlocale(LC_ALL, L"");
+	//	int ignore = _setmode(_fileno(stdout), _O_U16TEXT);
+
+	UINT CP = GetConsoleOutputCP();
+
+	for (int i = 0; i < 100; ++i)
+	{
+		PRO_BEGIN(L"16TEXT wprintf");
+		wprintf(szTest1);
+		PRO_END(L"16TEXT wprintf");
+	}
+
+	//for (int i = 0; i < 100; ++i)
+	//{
+	//	PRO_BEGIN(L"16TEXT printf");
+	//	printf(szText2);
+	//	PRO_END(L"16TEXT printf");
+	//}
+
+	PRO_DATAOUTTEXT(L"printf_profile.txt");
+}
+
 int wmain()
 {
 	timeBeginPeriod(1);
 
 	{
-		//PRO_RESET();
-
-		for (int i = 0; i < 100; ++i)
-		{
-			TestFunc1(i, i + 1);
-			TestFunc3();
-		}
-
-		PRO_BEGIN(L"test");
-
-		PRO_DATAOUTTEXT(L"testProfile.txt");
+		Test1();
 	}
-
-	
-
 
 	//{
 	//	DWORD start = timeGetTime();

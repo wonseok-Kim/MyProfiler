@@ -1,7 +1,11 @@
 #include <Windows.h>
 #include <assert.h>
+#include <fcntl.h>
+#include <io.h>
+#include <direct.h>
 #include <stdio.h>
 #include <string.h>
+#include <strsafe.h>
 
 #include "my_profile.h"
 
@@ -111,19 +115,51 @@ public:
 
 	void SaveDataToFile(const wchar_t* filename)
 	{
+		int backupMode = _setmode(_fileno(stdout), _O_U16TEXT);
+
+		WCHAR path[MAX_PATH];
+		if (GetCurrentDirectoryW(_countof(path), path) == 0)
+		{
+			MakeError(L"GetCurrentDirectory err: %d", GetLastError());
+			return;
+		}
+
+		STRSAFE_LPWSTR pDestEnd;
+		size_t remainSize;
+		HRESULT hrCat = StringCchCatExW(path, _countof(path), L"\\ProfileLog\\", &pDestEnd, &remainSize, 0);
+		if (FAILED(hrCat))
+		{
+			MakeError(L"StringCchCatExW hr: %d", hrCat);
+			return;
+		}
+
+		int retMkdir = _wmkdir(path);
+		if (retMkdir == -1 && errno != EEXIST)
+		{
+			MakeError(L"_wmkdir errno: %d", errno);
+			return;
+		}
+
+		HRESULT hrCopy = StringCchCopyW(pDestEnd, remainSize, filename);
+		if (FAILED(hrCopy))
+		{
+			MakeError(L"StringCchCopyW hr: %d", hrCopy);
+			return;
+		}
+
 		FILE* pFile;
-		errno_t result = _wfopen_s(&pFile, filename, L"w");
+		errno_t result = _wfopen_s(&pFile, path, L"w");
 		if (result != 0 || pFile == nullptr)
 		{
-			MakeError(L"'%s' open err: %d", filename, result);
+			MakeError(L"'%s' open err: %d", path, result);
 			return;
 		}
 
 		fwprintf(pFile, L"---------------------------------------------------------------------------------------------"
-			L"------------------------------\n");
-		fwprintf(pFile, L"%19s\t| %20s\t| %15s\t| %15s\t| %9s\t|\n", L"Name", L"Average", L"Min", L"Max", L"Call");
+			L"-----------\n");
+		fwprintf(pFile, L"%20s\t| %20s\t| %15s\t| %15s\t| %10s\t|\n", L"Name", L"Average", L"Min", L"Max", L"Call");
 		fwprintf(pFile, L"---------------------------------------------------------------------------------------------"
-			L"------------------------------\n");
+			L"-----------\n");
 		for (int i = 0; i < m_DataCount; ++i)
 		{
 			ProfileData* p = &m_DataList[i];
@@ -136,7 +172,7 @@ public:
 			}
 			else if (p->callCount == 0)
 			{
-				fwprintf(pFile, L"%19s\t| Only ProfileBegin() was called and ProfileEnd() was not called.\n", p->tag);
+				fwprintf(pFile, L"%20s\t| Only ProfileBegin() was called and ProfileEnd() was not called.\n", p->tag);
 				continue;
 			}
 			else
@@ -144,13 +180,15 @@ public:
 				average = (double)p->totalTime / p->callCount;
 			}
 
-			fwprintf(pFile, L"%20s\t| %20.4lfus\t| %15lldus\t| %15lldus\t| %10lld\n",
-				p->tag, average, p->min[0], p->max[0], p->callCount);
+			fwprintf(pFile, L"%20s\t| %18.4lf%cs\t| %13lld%cs\t| %13lld%cs\t| %10lld\t|\n",
+				p->tag, average, L'\u00b5', p->min[0], L'\u00b5', p->max[0], L'\u00b5', p->callCount);
 		}
 		fwprintf(pFile, L"---------------------------------------------------------------------------------------------"
-			L"------------------------------\n");
+			L"-----------\n");
 
 		fclose(pFile);
+
+		int ignore = _setmode(_fileno(stdout), backupMode);
 	}
 
 	void Reset()
